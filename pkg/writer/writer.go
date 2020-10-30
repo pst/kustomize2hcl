@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/hashicorp/terraform/repl"
 	"github.com/valyala/fasttemplate"
@@ -19,7 +20,7 @@ import (
 	"sigs.k8s.io/kustomize/kyaml/filtersutil"
 )
 
-var _ Writer = &TemplateWriter{}
+var _ Writer = &templateWriter{}
 
 type Writer interface {
 	Write(path string) (err error)
@@ -30,15 +31,15 @@ type terraformReferences struct {
 	Variables  map[string]string
 }
 
-type TemplateWriter struct {
+type templateWriter struct {
 	ResMap              resmap.ResMap
 	TerraformReferences terraformReferences
 	ProviderAlias       string
 	ProviderResource    string
 }
 
-func NewTemplateWriter(r resmap.ResMap) TemplateWriter {
-	return TemplateWriter{
+func NewTemplateWriter(r resmap.ResMap) templateWriter {
+	return templateWriter{
 		ResMap: r,
 		TerraformReferences: terraformReferences{
 			Namespaces: make(map[string]string),
@@ -49,13 +50,26 @@ func NewTemplateWriter(r resmap.ResMap) TemplateWriter {
 	}
 }
 
-func (tw *TemplateWriter) Write(path string) (err error) {
-	tfr, err := tw.resmapToHCL()
-	if err != nil {
+func (tw *templateWriter) Write(path string) (err error) {
+	if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		// path must be a directory
+		return fmt.Errorf("'%s', must be a directory", path)
+	} else if err != nil {
+		// if path does not exist, try creating it
+		err = os.Mkdir(path, os.ModePerm)
+		if err != nil {
+			return err
+		}
+	}
+
+	if files, err := ioutil.ReadDir(path); err == nil && len(files) != 0 {
+		// directory must be empty
+		return fmt.Errorf("'%s', must be empty", path)
+	} else if err != nil {
 		return err
 	}
 
-	err = os.Mkdir(path, os.ModePerm)
+	tfr, err := tw.resmapToHCL()
 	if err != nil {
 		return err
 	}
@@ -72,7 +86,7 @@ func (tw *TemplateWriter) Write(path string) (err error) {
 	return
 }
 
-func (tw *TemplateWriter) resmapToHCL() (tfr map[string]string, err error) {
+func (tw *templateWriter) resmapToHCL() (tfr map[string]string, err error) {
 	tfr = make(map[string]string)
 	tfr["_main"] = staticMain
 	tfr["_variables"] = staticVariables
@@ -82,9 +96,12 @@ func (tw *TemplateWriter) resmapToHCL() (tfr map[string]string, err error) {
 
 		refs := map[string]interface{}{}
 
-		nsref, err := tw.namespaceRef(r)
-		if err == nil {
-			refs["namespace"] = nsref
+		nsk, nsv, err := tw.namespaceRef(r)
+		if err != nil {
+			return tfr, err
+		}
+		if nsk != "" && nsv != "" {
+			refs[nsk] = nsv
 		}
 
 		hclT, err := tw.toHCL(n, r)
@@ -92,7 +109,7 @@ func (tw *TemplateWriter) resmapToHCL() (tfr map[string]string, err error) {
 			return tfr, err
 		}
 
-		t := fasttemplate.New(hclT, "\"%%", "%%\"")
+		t := fasttemplate.New(hclT, "\"##", "##\"")
 		hcl := t.ExecuteString(refs)
 
 		tfr[n] = hcl
@@ -109,19 +126,53 @@ func (tw *TemplateWriter) resmapToHCL() (tfr map[string]string, err error) {
 //
 // This function provides friendly but stable TF resource names
 // by concatenating kind, name and a hash of Kustomize's resid
-func (tw *TemplateWriter) resourceName(r *resource.Resource) string {
-	kind := strings.ToLower(strings.ReplaceAll(r.GetKind(), ".", "-"))
-	name := strings.ToLower(strings.ReplaceAll(r.GetOriginalName(), ".", "-"))
+func (tw *templateWriter) resourceName(r *resource.Resource) string {
+	kind := r.GetKind()
+	name := r.GetOriginalName()
 
 	h := sha512.New()
 	id := r.OrgId().String()
 	h.Write([]byte(id))
 	hash := hex.EncodeToString(h.Sum(nil))[0:7]
 
-	return fmt.Sprintf("%s_%s_%s", kind, name, hash)
+	cs := fmt.Sprintf("%s_%s_%s", kind, name, hash)
+
+	return tw.cleanResourceNameChars(cs)
 }
 
-func (tw *TemplateWriter) toHCL(n string, r *resource.Resource) (hcl string, err error) {
+// Ensure strings taken from Kubernetes YAML meet Terraforms name requirements
+//
+// A name must start with a letter or underscore and may contain only letters,
+// digits, underscores, and dashes.
+func (tw *templateWriter) cleanResourceNameChars(in string) string {
+	var chars []rune
+	for p, ch := range in {
+		if 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= 0x80 && unicode.IsLetter(ch) {
+			chars = append(chars, ch)
+			continue
+		}
+
+		// if this is the first ch and it didn't pass the test above
+		// we prefix an underscore
+		if p == 0 {
+			chars = append([]rune{'_'}, chars...)
+		}
+
+		// any ch not first ch can also be a digit
+		if '0' <= ch && ch <= '9' || ch >= 0x80 && unicode.IsDigit(ch) {
+			chars = append(chars, ch)
+			continue
+		}
+
+		// if the ch did not meet any of the above,
+		//replace it with a dash
+		chars = append(chars, '-')
+	}
+
+	return string(chars)
+}
+
+func (tw *templateWriter) toHCL(n string, r *resource.Resource) (hcl string, err error) {
 	// we marshal and unmarshal to JSON
 	// to get an interface that works
 	// with FormatResult
@@ -146,34 +197,40 @@ func (tw *TemplateWriter) toHCL(n string, r *resource.Resource) (hcl string, err
 	return hcl, nil
 }
 
-func (tw *TemplateWriter) namespaceRef(r *resource.Resource) (string, error) {
+func (tw *templateWriter) namespaceRef(r *resource.Resource) (k string, v string, err error) {
 	ns := r.GetNamespace()
 	if ns == "" {
-		return "", fmt.Errorf("'%s', has no namespace", r.CurId())
-	}
-
-	err := filtersutil.ApplyToJSON(namespace.Filter{
-		Namespace: "%%namespace%%",
-		FsSlice:   nil,
-	}, r)
-	if err != nil {
-		return "", err
-	}
-	matches := tw.ResMap.GetMatchingResourcesByCurrentId(r.CurId().Equals)
-	if len(matches) != 1 {
-		return "", fmt.Errorf(
-			"namespace transformation produces ID conflict: %+v", matches)
+		// the resource has no namespace
+		return "", "", nil
 	}
 
 	gvk := resid.Gvk{Group: "", Version: "v1", Kind: "Namespace"}
 	rid := resid.NewResId(gvk, ns)
 	nsr, err := tw.ResMap.GetById(rid)
 	if err != nil {
-		return "", err
+		// the resource's namespace is not in the resmap
+		return "", "", nil
 	}
-	return fmt.Sprintf(
-		"%s.%s",
+
+	k = fmt.Sprintf("NamespaceRef_%s", ns)
+	v = fmt.Sprintf(
+		"%s.%s.manifest.metadata.name",
 		tw.ProviderResource,
 		tw.resourceName(nsr),
-	), nil
+	)
+
+	err = filtersutil.ApplyToJSON(namespace.Filter{
+		Namespace: fmt.Sprintf("##%s##", k),
+		FsSlice:   nil,
+	}, r)
+	if err != nil {
+		return "", "", nil
+	}
+	matches := tw.ResMap.GetMatchingResourcesByCurrentId(r.CurId().Equals)
+	if len(matches) != 1 {
+		return "", "", fmt.Errorf(
+			"namespace transformation produces ID conflict: %+v", matches)
+	}
+
+	return k, v, nil
 }
