@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"unicode"
 
 	"github.com/hashicorp/terraform/repl"
@@ -191,7 +190,7 @@ func (tw *templateWriter) toHCL(n string, r *resource.Resource) (hcl string, err
 
 	hcl = fmt.Sprintf("resource %q %q {\n", tw.ProviderResource, n)
 	hcl += fmt.Sprintf("  provider = %v\n\n", tw.ProviderAlias)
-	hcl += fmt.Sprintf("  manifest = %v\n\n", strings.ReplaceAll(m, "\n", "\n  "))
+	hcl += fmt.Sprintf("  manifest = %v\n\n", m)
 	hcl += fmt.Sprintf("}\n\n")
 
 	return hcl, nil
