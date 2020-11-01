@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"unicode"
 
 	"github.com/hashicorp/terraform/repl"
@@ -18,6 +19,9 @@ import (
 	"sigs.k8s.io/kustomize/api/resource"
 	"sigs.k8s.io/kustomize/kyaml/filtersutil"
 )
+
+const tplBegin string = "###"
+const tplClose string = "###"
 
 var _ Writer = &templateWriter{}
 
@@ -35,6 +39,7 @@ type templateWriter struct {
 	TerraformReferences terraformReferences
 	ProviderAlias       string
 	ProviderResource    string
+	TemplateValues      map[string]interface{}
 }
 
 func NewTemplateWriter(r resmap.ResMap) templateWriter {
@@ -46,6 +51,7 @@ func NewTemplateWriter(r resmap.ResMap) templateWriter {
 		},
 		ProviderAlias:    "kubernetes-alpha",
 		ProviderResource: "kubernetes_manifest",
+		TemplateValues:   make(map[string]interface{}),
 	}
 }
 
@@ -93,23 +99,30 @@ func (tw *templateWriter) resmapToHCL() (tfr map[string]string, err error) {
 	for _, r := range tw.ResMap.Resources() {
 		n := tw.resourceName(r)
 
-		refs := map[string]interface{}{}
-
-		nsk, nsv, err := tw.namespaceRef(r)
+		nsRefs, err := tw.namespaceRef(r)
 		if err != nil {
 			return tfr, err
 		}
-		if nsk != "" && nsv != "" {
-			refs[nsk] = nsv
+		for _, r := range nsRefs {
+			if r.k != "" && r.v != "" {
+				tw.TemplateValues[r.k] = r.v
+			}
 		}
 
-		hclT, err := tw.toHCL(n, r)
+		mldRefs, err := tw.multiLineDataRef(r)
 		if err != nil {
 			return tfr, err
 		}
+		for _, r := range mldRefs {
+			if r.k != "" && r.v != "" {
+				tw.TemplateValues[r.k] = r.v
+			}
+		}
 
-		t := fasttemplate.New(hclT, "\"##", "##\"")
-		hcl := t.ExecuteString(refs)
+		hcl, err := tw.toHCL(n, r)
+		if err != nil {
+			return tfr, err
+		}
 
 		tfr[n] = hcl
 	}
@@ -181,26 +194,41 @@ func (tw *templateWriter) toHCL(n string, r *resource.Resource) (hcl string, err
 	}
 
 	var k interface{}
-	json.Unmarshal(j, &k)
+	err = json.Unmarshal(j, &k)
+	if err != nil {
+		return hcl, err
+	}
 
 	m, err := repl.FormatResult(k)
 	if err != nil {
 		return hcl, err
 	}
 
+	t := fasttemplate.New(
+		m,
+		fmt.Sprintf("\"%s", tplBegin),
+		fmt.Sprintf("%s\"", tplClose),
+	)
+	tm := t.ExecuteString(tw.TemplateValues)
+
 	hcl = fmt.Sprintf("resource %q %q {\n", tw.ProviderResource, n)
 	hcl += fmt.Sprintf("  provider = %v\n\n", tw.ProviderAlias)
-	hcl += fmt.Sprintf("  manifest = %v\n\n", m)
+	hcl += fmt.Sprintf("  manifest = %v\n\n", tm)
 	hcl += fmt.Sprintf("}\n\n")
 
 	return hcl, nil
 }
 
-func (tw *templateWriter) namespaceRef(r *resource.Resource) (k string, v string, err error) {
+type tplRef struct {
+	k string
+	v string
+}
+
+func (tw *templateWriter) namespaceRef(r *resource.Resource) (refs []tplRef, err error) {
 	ns := r.GetNamespace()
 	if ns == "" {
 		// the resource has no namespace
-		return "", "", nil
+		return refs, nil
 	}
 
 	gvk := resid.Gvk{Group: "", Version: "v1", Kind: "Namespace"}
@@ -208,28 +236,70 @@ func (tw *templateWriter) namespaceRef(r *resource.Resource) (k string, v string
 	nsr, err := tw.ResMap.GetById(rid)
 	if err != nil {
 		// the resource's namespace is not in the resmap
-		return "", "", nil
+		return refs, nil
 	}
 
-	k = fmt.Sprintf("NamespaceRef_%s", ns)
-	v = fmt.Sprintf(
+	tplRef := tplRef{}
+	tplRef.k = fmt.Sprintf("NamespaceRef_%s", ns)
+	tplRef.v = fmt.Sprintf(
 		"%s.%s.manifest.metadata.name",
 		tw.ProviderResource,
 		tw.resourceName(nsr),
 	)
+	refs = append(refs, tplRef)
 
 	err = filtersutil.ApplyToJSON(namespace.Filter{
-		Namespace: fmt.Sprintf("##%s##", k),
+		Namespace: fmt.Sprintf("%s%s%s", tplBegin, tplRef.k, tplClose),
 		FsSlice:   nil,
 	}, r)
 	if err != nil {
-		return "", "", nil
+		return refs, err
 	}
 	matches := tw.ResMap.GetMatchingResourcesByCurrentId(r.CurId().Equals)
 	if len(matches) != 1 {
-		return "", "", fmt.Errorf(
+		return refs, fmt.Errorf(
 			"namespace transformation produces ID conflict: %+v", matches)
 	}
 
-	return k, v, nil
+	return refs, nil
+}
+
+func (tw *templateWriter) multiLineDataRef(r *resource.Resource) (refs []tplRef, err error) {
+	d, err := r.GetFieldValue("data")
+	if err != nil {
+		if err.Error() == "no field named 'data'" {
+			// the resource does not have data
+			return refs, nil
+		}
+		return refs, err
+	}
+
+	if d == nil {
+		return refs, nil
+	}
+
+	data := d.(map[string]interface{})
+	for k, v := range data {
+		if strings.Index(v.(string), "\n") >= 0 || strings.Index(v.(string), "\r") >= 0 {
+			tplRef := tplRef{}
+
+			h := sha512.New()
+			h.Write([]byte(v.(string)))
+
+			tplRef.k = fmt.Sprintf("MultiLineDataRef_%s", hex.EncodeToString(h.Sum(nil)))
+
+			// escape terraform ${ %{ interpolation
+			s := strings.ReplaceAll(v.(string), "${", "$${")
+			s = strings.ReplaceAll(s, "%{", "%%{")
+
+			tplRef.v = fmt.Sprintf("<<EOF\n%sEOF", s)
+
+			// replace value in resource with template placeholder
+			data[k] = fmt.Sprintf("%s%s%s", tplBegin, tplRef.k, tplClose)
+
+			refs = append(refs, tplRef)
+		}
+	}
+
+	return refs, nil
 }
