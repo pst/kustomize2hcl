@@ -27,6 +27,7 @@ func TestTemplateWriterWriteExistingDir(t *testing.T) {
 
 	m, diags := tfconfig.LoadModule(out)
 	de := diags.HasErrors()
+	fmt.Println(diags)
 	assert.Equal(t, false, de, nil)
 
 	assert.Contains(t, m.RequiredProviders, "kubernetes-alpha", nil)
@@ -130,10 +131,10 @@ func TestTemplateNamespaceRef(t *testing.T) {
 	// the second resource in the nginx fixture is service account
 	// ~G_v1_ServiceAccount|ingress-nginx|ingress-nginx
 	rs := rm.Resources()[1]
-	k, v, err := w.namespaceRef(rs)
+	refs, err := w.namespaceRef(rs)
 	assert.Equal(t, nil, err, nil)
-	assert.Equal(t, "NamespaceRef_ingress-nginx", k, nil)
-	assert.Equal(t, "kubernetes_manifest.Namespace_ingress-nginx_92f07d0.manifest.metadata.name", v, nil)
+	assert.Equal(t, "NamespaceRef_ingress-nginx", refs[0].k, nil)
+	assert.Equal(t, "kubernetes_manifest.Namespace_ingress-nginx_92f07d0.manifest.metadata.name", refs[0].v, nil)
 }
 
 func TestTemplateNamespaceRefNoNS(t *testing.T) {
@@ -146,9 +147,8 @@ func TestTemplateNamespaceRefNoNS(t *testing.T) {
 	// the first resource in the nginx fixture is a namespace
 	// ~G_v1_Namespace|~X|ingress-nginx
 	rs := rm.Resources()[0]
-	k, v, err := w.namespaceRef(rs)
-	assert.Equal(t, "", k, nil)
-	assert.Equal(t, "", v, nil)
+	refs, err := w.namespaceRef(rs)
+	assert.Equal(t, 0, len(refs), nil)
 	assert.Equal(t, nil, err, nil)
 }
 
@@ -166,8 +166,54 @@ func TestTemplateNamespaceRefNSNotInResMap(t *testing.T) {
 	// overwrite ns to one that is not in the resmap
 	rs.SetNamespace("default")
 
-	k, v, err := w.namespaceRef(rs)
-	assert.Equal(t, "", k, nil)
-	assert.Equal(t, "", v, nil)
+	refs, err := w.namespaceRef(rs)
+	assert.Equal(t, 0, len(refs), nil)
+	assert.Equal(t, nil, err, nil)
+}
+
+func TestMultiLineDataRef(t *testing.T) {
+	src := filepath.Join(".", "fixtures", "multi-line-data")
+	r := reader.KustomizeReader{}
+	rm, _ := r.Read(src)
+
+	w := NewTemplateWriter(rm)
+
+	// get the multi-line configmap from the fixture
+	rs := rm.Resources()[1]
+
+	refs, err := w.multiLineDataRef(rs)
+	assert.Equal(t, 1, len(refs), nil)
+	assert.Equal(t, "MultiLineDataRef_afc9a5728626763979deeeaae4bb84b58c7ec8ef0acf2b302cd2f3e4519d711b9263b54786cc79deafb3bb16ba4f0a87360d2177ceecf4be16f1aabd675eda9d", refs[0].k, nil)
+	assert.Equal(t, "<<EOF\nkey1=$${value1}\nkey2=%%{value2}\nkey3=[value3]\nEOF", refs[0].v, nil)
+	assert.Equal(t, nil, err, nil)
+}
+
+func TestMultiLineDataRefNoMultiLineData(t *testing.T) {
+	src := filepath.Join(".", "fixtures", "multi-line-data")
+	r := reader.KustomizeReader{}
+	rm, _ := r.Read(src)
+
+	w := NewTemplateWriter(rm)
+
+	// get the multi-key configmap from the fixture
+	rs := rm.Resources()[2]
+
+	refs, err := w.multiLineDataRef(rs)
+	assert.Equal(t, 0, len(refs), nil)
+	assert.Equal(t, nil, err, nil)
+}
+
+func TestMultiLineDataRefNoData(t *testing.T) {
+	src := filepath.Join(".", "fixtures", "multi-line-data")
+	r := reader.KustomizeReader{}
+	rm, _ := r.Read(src)
+
+	w := NewTemplateWriter(rm)
+
+	// get the namespace from the fixture
+	rs := rm.Resources()[0]
+
+	refs, err := w.multiLineDataRef(rs)
+	assert.Equal(t, 0, len(refs), nil)
 	assert.Equal(t, nil, err, nil)
 }
