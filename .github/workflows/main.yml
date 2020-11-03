@@ -21,12 +21,14 @@ jobs:
       - name: Run unit tests
         run: make test
 
-      - uses: kbst/goreleaser-action@v2
+      - name: Run goreleaser
+        uses: kbst/goreleaser-action@v2
         with:
           version: latest
           args: release --skip-publish --snapshot --rm-dist --skip-sign
 
-      - uses: actions/upload-artifact@v2
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@v2
         with:
           name: dist
           path: dist/*.zip
@@ -38,7 +40,8 @@ jobs:
       TF_PLUGIN_CACHE_DIR: /tmp/.terraform/plugin-cache
 
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout catalog repo
+        uses: actions/checkout@v2
         with:
           repository: kbst/catalog
           ref: master
@@ -50,15 +53,17 @@ jobs:
           terraform_wrapper: false
           terraform_version: "${{ env.TERRAFORM_VERSION }}"
 
-      - uses: actions/download-artifact@v2
+      - name: Download dist artifact
+        uses: actions/download-artifact@v2
         with:
           name: dist
       
-      - run: unzip kustomize2hcl_linux_amd64.zip
+      - name: Prepare kustomize2hcl binary
+        run: |
+          unzip kustomize2hcl_linux_amd64.zip
+          echo "${{ github.workspace }}" >> $GITHUB_PATH
 
-      - run: echo "${{ github.workspace }}" >> $GITHUB_PATH
-
-      - name: generate modules
+      - name: Generate modules
         run: |
           mkdir -p modules/
           for entry in `ls catalog/src`; do
@@ -68,11 +73,11 @@ jobs:
             done
           done
 
-      - name: setup plugin-cache
+      - name: Setup plugin-cache
         run: |
           mkdir -p $TF_PLUGIN_CACHE_DIR
       
-      - name: validate modules
+      - name: Validate generated modules
         run: |
           for module in `ls modules/`; do
             cd modules/$module
@@ -81,7 +86,8 @@ jobs:
             cd -
           done
 
-      - uses: actions/upload-artifact@v2
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v2
         with:
           name: modules
           path: |
@@ -98,7 +104,8 @@ jobs:
         with:
           version: "v0.9.0"
 
-      - uses: actions/checkout@v2
+      - name: Checkout terraform-provider-kubernetes-alpha
+        uses: actions/checkout@v2
         with:
           repository: hashicorp/terraform-provider-kubernetes-alpha
           ref: local-plan
@@ -122,16 +129,17 @@ jobs:
           terraform_wrapper: false
           terraform_version: "${{ env.TERRAFORM_VERSION }}"
 
-      - uses: actions/download-artifact@v2
+      - name: Download modules artifact
+        uses: actions/download-artifact@v2
         with:
           name: modules
           path: modules/
 
-      - name: Run Terraform
+      - name: Test modules
         run: |
           for module in `ls modules/`; do
             cd modules/$module
             terraform init
-            terraform plan
+            terraform apply --auto-approve
             cd -
           done
