@@ -141,5 +141,6 @@ jobs:
             cd modules/$module
             terraform init
             terraform apply --auto-approve
+            terraform destroy --auto-approve
             cd -
           done
