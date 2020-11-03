@@ -140,7 +140,7 @@ jobs:
           for module in `ls modules/`; do
             cd modules/$module
             terraform init
-            terraform apply --auto-approve
-            terraform destroy --auto-approve
+            terraform apply --auto-approve || true
+            terraform destroy --auto-approve || true
             cd -
           done
