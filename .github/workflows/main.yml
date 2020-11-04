@@ -137,5 +137,5 @@ jobs:
 
       - name: Test modules
         run: |
-          pip install nosetests
+          pip install nose
           python test.py
