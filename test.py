@@ -13,9 +13,9 @@ DISTDIR = "modules"
 TIMEOUT = 180  # 3 minutes in seconds
 
 
-def run_cmd(name, cmd, timeout):
+def run_cmd(name, cmd, cwd, timeout):
     start = time.time()
-    p = Popen(cmd, stdout=PIPE, stderr=PIPE)
+    p = Popen(cmd, cwd=cwd, stdout=PIPE, stderr=PIPE)
     while True:
         # we give up
         if (time.time() - start) >= timeout:
@@ -41,23 +41,21 @@ def run_steps(name, path):
     tfvar_arg = f"--var=path={path}"
     steps = {
         "apply": {"type": "run_cmd",
-                          "cmd": ["terraform",
-                                  "apply",
-                                  "--auto-approve",
-                                  tfvar_arg]},
+                  "cmd": ["terraform",
+                          "apply",
+                          "--auto-approve"]},
         "destroy": {"type": "run_cmd",
-                            "cmd": ["terraform",
-                                    "destroy",
-                                    "--auto-approve",
-                                    tfvar_arg]}
+                    "cmd": ["terraform",
+                            "destroy",
+                            "--auto-approve"]},
     }
 
     for step in steps.values():
-        run_cmd(name, step["cmd"], TIMEOUT)
+        run_cmd(name, step["cmd"], path, TIMEOUT)
 
 
 def setup():
-    run_cmd("init", ["terraform", "init"], TIMEOUT)
+    run_cmd("init", ["terraform", "init"], ".", TIMEOUT)
 
 
 def teardown():
