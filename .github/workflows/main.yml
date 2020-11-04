@@ -137,10 +137,5 @@ jobs:
 
       - name: Test modules
         run: |
-          for module in `ls modules/`; do
-            cd modules/$module
-            terraform init
-            terraform apply --auto-approve || true
-            terraform destroy --auto-approve || true
-            cd -
-          done
+          pip install nosetests
+          python test.py
