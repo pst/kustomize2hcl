@@ -9,7 +9,7 @@ from tempfile import TemporaryDirectory
 from nose import with_setup
 from shutil import unpack_archive
 
-DISTDIR = "modules"
+DISTDIR = "modules/"
 TIMEOUT = 180  # 3 minutes in seconds
 
 
@@ -38,7 +38,6 @@ def run_cmd(name, cmd, cwd, timeout):
 
 
 def run_steps(name, path):
-    tfvar_arg = f"--var=path={path}"
     steps = {
         "apply": {"type": "run_cmd",
                   "cmd": ["terraform",
