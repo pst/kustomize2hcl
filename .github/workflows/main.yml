@@ -139,7 +139,7 @@ jobs:
 
       - name: Test modules
         run: |
-          virtualenv --python=python3 .venv
+          python3 -m venv .venv
           source .venv/bin/activate
           pip3 install nose
           nosetests -s test.py
