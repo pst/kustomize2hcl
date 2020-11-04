@@ -140,4 +140,4 @@ jobs:
       - name: Test modules
         run: |
           pip3 install nose
-          python3 test.py
+          ./test.py
