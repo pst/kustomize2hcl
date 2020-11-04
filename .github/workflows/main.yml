@@ -138,4 +138,5 @@ jobs:
       - name: Test modules
         run: |
           pip install nose
+          ls -al
           python test.py
