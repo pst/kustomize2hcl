@@ -140,4 +140,4 @@ jobs:
       - name: Test modules
         run: |
           pip3 install nose
-          nosetests -s test.py
+          nosetests-3.4 -s test.py
