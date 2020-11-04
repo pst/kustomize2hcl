@@ -99,6 +99,8 @@ jobs:
     needs: generate
 
     steps:
+      - uses: actions/checkout@v2
+
       - name: 'Setup Kind'
         uses: engineerd/setup-kind@v0.4.0
         with:
@@ -138,5 +140,4 @@ jobs:
       - name: Test modules
         run: |
           pip install nose
-          ls -al
           python test.py
