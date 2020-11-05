@@ -3,10 +3,8 @@
 import time
 import logging
 from os import listdir
-from os.path import isdir, isfile, join, abspath
+from os.path import isdir, join
 from subprocess import Popen, PIPE
-from tempfile import TemporaryDirectory
-from nose import with_setup
 from shutil import unpack_archive
 
 DISTDIR = "modules/"
@@ -39,6 +37,9 @@ def run_cmd(name, cmd, cwd, timeout):
 
 def run_steps(name, path):
     steps = {
+        "init": {"type": "run_cmd",
+                 "cmd": ["terraform",
+                         "init"]},
         "apply": {"type": "run_cmd",
                   "cmd": ["terraform",
                           "apply",
@@ -53,15 +54,6 @@ def run_steps(name, path):
         run_cmd(name, step["cmd"], path, TIMEOUT)
 
 
-def setup():
-    run_cmd("init", ["terraform", "init"], ".", TIMEOUT)
-
-
-def teardown():
-    pass
-
-
-@with_setup(setup, teardown)
 def test_variants():
     for module in listdir(DISTDIR):
         module_path = join(DISTDIR, module)
