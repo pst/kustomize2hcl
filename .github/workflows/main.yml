@@ -139,7 +139,5 @@ jobs:
 
       - name: Test modules
         run: |
-          python3 -m venv .venv
-          source .venv/bin/activate
-          pip3 install nose
-          nosetests -s test.py
+          pip3 install pipenv
+          pipenv run nosetests -s test.py
