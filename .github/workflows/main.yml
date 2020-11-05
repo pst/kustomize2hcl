@@ -137,7 +137,7 @@ jobs:
           name: modules
           path: modules/
 
-      - name: Test
-        uses: VaultVulp/action-pipenv@v2.0.1
-        with:
-          command: run nosetests -s test.py
+      - name: Test modules
+        run: |
+          pip3 install pipenv --user
+          ~/.local/bin/pipenv run nosetests -s test.py
