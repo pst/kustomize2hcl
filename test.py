@@ -6,19 +6,15 @@ from os import listdir
 from os.path import isdir, join
 from subprocess import Popen, PIPE
 from shutil import unpack_archive
+from nose.tools import timed
 
 DISTDIR = "modules/"
 TIMEOUT = 180  # 3 minutes in seconds
 
 
 def run_cmd(name, cmd, cwd, timeout):
-    start = time.time()
     p = Popen(cmd, cwd=cwd, stdout=PIPE, stderr=PIPE)
     while True:
-        # we give up
-        if (time.time() - start) >= timeout:
-            break
-
         exit_code = p.poll()
         if exit_code is not None:
             break
@@ -35,6 +31,7 @@ def run_cmd(name, cmd, cwd, timeout):
     assert exit_code == 0
 
 
+@timed(TIMEOUT)
 def run_steps(name, path):
     steps = {
         "init": {"type": "run_cmd",
