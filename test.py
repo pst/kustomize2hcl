@@ -8,7 +8,7 @@ from subprocess import Popen, PIPE, TimeoutExpired
 from shutil import unpack_archive
 
 DISTDIR = "modules/"
-TIMEOUT = 180  # 3 minutes in seconds
+TIMEOUT = 30  # in seconds
 
 
 def run_cmd(name, cmd, cwd, timeout):
@@ -30,16 +30,9 @@ def run_steps(name, path):
         "init": {"type": "run_cmd",
                  "cmd": ["terraform",
                          "init"]},
-        "kubectl": {"type": "run_cmd",
-                    "cmd": ["kubectl",
-                            "get",
-                            "node"]},
-        "exit": {"type": "run_cmd",
-                 "cmd": ["exit",
-                         "1"]},
-        # "plan": {"type": "run_cmd",
-        #         "cmd": ["terraform",
-        #                 "plan"]},
+        "plan": {"type": "run_cmd",
+                 "cmd": ["terraform",
+                         "plan"]},
         # "apply": {"type": "run_cmd",
         #           "cmd": ["terraform",
         #                   "apply",
