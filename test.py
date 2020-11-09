@@ -27,12 +27,15 @@ def run_cmd(name, cmd, cwd, timeout):
 
 def run_steps(name, path):
     steps = {
-        "init": {"type": "run_cmd",
-                 "cmd": ["terraform",
-                         "init"]},
-        "plan": {"type": "run_cmd",
-                 "cmd": ["terraform",
-                         "plan"]},
+        "debug": {"type": "run_cmd",
+                  "cmd": ["ls",
+                          "-al"]},
+        # "init": {"type": "run_cmd",
+        #         "cmd": ["terraform",
+        #                 "init"]},
+        # "plan": {"type": "run_cmd",
+        #         "cmd": ["terraform",
+        #                 "plan"]},
         # "apply": {"type": "run_cmd",
         #           "cmd": ["terraform",
         #                   "apply",
