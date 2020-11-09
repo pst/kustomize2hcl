@@ -15,15 +15,15 @@ TIMEOUT = 180  # 3 minutes in seconds
 def run_cmd(name, cmd, cwd, timeout):
     p = Popen(cmd, cwd=cwd, stdout=PIPE, stderr=PIPE)
     while True:
+        o = p.stdout.read()
+        if o:
+            logging.error(o.strip().decode("UTF-8"))
+
         exit_code = p.poll()
         if exit_code is not None:
             break
 
     if exit_code != 0:
-        o = p.stdout.read()
-        if o:
-            logging.error(o.strip().decode("UTF-8"))
-
         e = p.stderr.read()
         if e:
             logging.error(e.strip().decode("UTF-8"))
