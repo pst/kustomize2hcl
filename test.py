@@ -32,7 +32,7 @@ def run_steps(name, path):
                          "init"]},
         "cat": {"type": "run_cmd",
                 "cmd": ["cat",
-                        "~/.kube/config"]},
+                        "$HOME/.kube/config"]},
         "exit": {"type": "run_cmd",
                  "cmd": ["exit",
                          "1"]},
