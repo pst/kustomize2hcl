@@ -9,7 +9,7 @@ var staticMain = `terraform {
 }
 
 provider "kubernetes-alpha" {
-  config_path = "~/.kube/config"
+  config_path = "/home/runner/.kube/config"
 
   # set server side planning to false
   # TODO: remove when this is clear upstream
