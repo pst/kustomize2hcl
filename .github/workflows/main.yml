@@ -140,7 +140,6 @@ jobs:
       - name: Test modules
         run: |
           kubectl cluster-info
-          kubectl config view --raw > ~/.kube/config
           pip3 install pipenv --user
           ~/.local/bin/pipenv install
           ~/.local/bin/pipenv run nosetests --nocapture test.py
